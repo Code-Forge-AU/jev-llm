@@ -17,5 +17,11 @@ assert len(g.fanout_questions("Hi", "m")) == 2
 assert "END" not in g.rerank_questions(["hi"], [("there", 0.5)])["r"]["criteria"]
 assert "END" in g.rerank_questions(["hi", "."], [("there", 0.5)])["r"]["criteria"]
 assert [k for k, p in pool if p >= g.spec_min][:2] == ["the", "on"], "speculation gate keeps only rated candidates"
+assert ("on the", 0.4) in pool and "of the" not in keys, "phrases join the pool only when their first word is a candidate"
+assert render(["the", "cat"] + "on the".split(" ")) == "The cat on the"
+g.window = 2
+crit = g.rerank_questions(["a", "b", "c", "d", "."], [("e", 0.5)])["r"]["criteria"]
+assert crit["c0"] == '"... d. E"', crit  # window counts tokens, punctuation included
+assert g.rerank_questions(["a"], [("e", 0.5)])["r"]["criteria"]["c0"] == '"An e"', "short replies are shown in full (and a/an fixed)"
 assert GROUP + len(PUNCT) + 1 == 255
 print("ok")

@@ -16,7 +16,7 @@ if __name__ == "__main__":
         reply, st = Generator(groups, spec, beams, **kw).generate(p, max_words=50)
         w = max(1, st["words"])
         rows.append(f"| {label} | {p} | {st['rounds']} | {st['rounds']/w:.2f} | {st['seconds']/w:.2f} | "
-                    f"{st['spec_hits']}/{st['words']} | {st.get('widened', '-')} | {st['input_tokens']/1000:.0f}k | "
+                    f"{st['spec_hits']}/{st['words']} | {st.get('widened', '-')}/{st.get('phrases', '-')} |{st['input_tokens']/1000:.0f}k | "
                     f"{st['input_tokens']/w/1000:.1f}k | {reply.replace(chr(10), ' / ')} |")
         print(rows[-1], flush=True)
     with open("results.md", "a", encoding="utf8") as f:
