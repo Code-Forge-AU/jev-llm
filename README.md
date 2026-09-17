@@ -26,6 +26,22 @@ python bench.py 16 2 1            # appends a benchmark block to results.md
 Flags: `--beams N`, `--spec N` (speculative fan-outs per round), `--temperature T`, `--max-words N`.
 `words.txt` is the English top-50k list from [hermitdave/FrequencyWords](https://github.com/hermitdave/FrequencyWords) (CC BY-SA 4.0).
 
+## Web chat
+
+```bash
+python server.py            # http://localhost:8000
+```
+
+`server.py` (stdlib only) serves `index.html` and streams replies over server-sent events.
+Visitors paste their own TypeSafe key; it lives in their browser's local storage and is
+forwarded to api.typesafe.ai for their requests only, never logged. If the server itself has
+`TYPESAFE_API_KEY` set (or a `.env`), visitors need no key and the header says "Using host's key",
+so unset it on a public deployment unless you mean to pay for everyone.
+
+**Railway:** push this folder to a repo, create a Railway service from it, done. `Procfile`,
+`requirements.txt` and `runtime.txt` are there so Nixpacks picks Python; the server listens on
+`$PORT`. Do not commit `.env` (it is in `.gitignore`).
+
 ## How it works
 
 Jev caps a Choice at 255 options and its character-level distribution is nearly flat, so the
