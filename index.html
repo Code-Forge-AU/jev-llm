@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jev, talking</title>
+<meta name="description" content="Chat with TypeSafe's Jev decision model, forced to write text one word per round trip. Bring your own API key.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop stop-color='%238b5cf6'/%3E%3Cstop offset='1' stop-color='%2322d3ee'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='64' height='64' rx='16' fill='url(%23g)'/%3E%3Ctext x='32' y='44' font-family='monospace' font-weight='700' font-size='36' text-anchor='middle' fill='%2305060a'%3EJ%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#07080c; --panel:rgba(255,255,255,.035); --line:rgba(255,255,255,.08); --text:#e8eaf0; --muted:#8b91a3;
+  --accent:#8b5cf6; --accent2:#22d3ee; --user:#1b1f2e; --danger:#f87171; --mono:"JetBrains Mono",ui-monospace,monospace;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 Inter,system-ui,-apple-system,Segoe UI,sans-serif;-webkit-font-smoothing:antialiased;overflow:hidden}
+body::before{content:"";position:fixed;inset:0;pointer-events:none;
+  background:radial-gradient(60vw 40vh at 15% 0%,rgba(139,92,246,.22),transparent 60%),
+             radial-gradient(50vw 40vh at 90% 100%,rgba(34,211,238,.14),transparent 60%);}
+body::after{content:"";position:fixed;inset:0;pointer-events:none;opacity:.35;
+  background-image:linear-gradient(var(--line) 1px,transparent 1px),linear-gradient(90deg,var(--line) 1px,transparent 1px);
+  background-size:48px 48px;mask-image:radial-gradient(70vw 70vh at 50% 30%,#000 30%,transparent 100%)}
+.app{position:relative;z-index:1;height:100%;display:flex;flex-direction:column;max-width:860px;margin:0 auto;padding:0 16px}
+header{display:flex;align-items:center;justify-content:space-between;padding:18px 0 10px}
+.brand{display:flex;align-items:center;gap:12px}
+.logo{width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:grid;place-items:center;font:600 16px var(--mono);color:#05060a;box-shadow:0 0 30px rgba(139,92,246,.45)}
+h1{margin:0;font-size:17px;font-weight:600;letter-spacing:-.01em}
+.sub{margin:0;color:var(--muted);font-size:12.5px}
+.btn{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:10px;padding:8px 12px;font:inherit;font-size:13px;cursor:pointer;backdrop-filter:blur(8px)}
+.btn:hover{border-color:rgba(255,255,255,.2)}
+.btn.key{font-family:var(--mono);font-size:12px}
+.btn.key .dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--danger);margin-right:8px;vertical-align:1px}
+.btn.key.ok .dot{background:#34d399;box-shadow:0 0 10px #34d399}
+main{flex:1;overflow-y:auto;padding:12px 0 24px;scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+.empty{height:100%;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center;gap:14px;color:var(--muted)}
+.empty h2{margin:0;font-size:30px;font-weight:700;letter-spacing:-.03em;color:var(--text);
+  background:linear-gradient(90deg,#fff,#c4b5fd 60%,#67e8f9);-webkit-background-clip:text;background-clip:text;color:transparent}
+.empty p{max-width:520px;margin:0}
+.chips{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin-top:6px}
+.chip{border:1px solid var(--line);background:var(--panel);color:var(--text);border-radius:999px;padding:7px 13px;font-size:13px;cursor:pointer}
+.chip:hover{border-color:var(--accent)}
+.msg{display:flex;gap:12px;margin:14px 0;animation:in .25s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.msg .who{flex:none;width:28px;height:28px;border-radius:8px;display:grid;place-items:center;font:600 11px var(--mono);margin-top:2px}
+.msg.user .who{background:var(--user);color:var(--muted);border:1px solid var(--line)}
+.msg.bot .who{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#05060a}
+.bubble{max-width:100%;white-space:pre-wrap;word-wrap:break-word}
+.msg.user .bubble{background:var(--user);border:1px solid var(--line);border-radius:14px;padding:10px 14px}
+.msg.bot .bubble{padding:4px 0;font-size:16.5px;line-height:1.6}
+.bubble.live::after{content:"";display:inline-block;width:9px;height:18px;margin-left:3px;vertical-align:-3px;
+  background:linear-gradient(var(--accent),var(--accent2));border-radius:2px;animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:0}}
+.meta{font:12px var(--mono);color:var(--muted);margin-top:8px;display:flex;flex-wrap:wrap;gap:6px 14px}
+.meta b{color:#c4b5fd;font-weight:500}
+.err{color:var(--danger);font-family:var(--mono);font-size:13px}
+.composer{padding:8px 0 18px}
+.box{position:relative;border:1px solid var(--line);background:rgba(10,12,18,.8);backdrop-filter:blur(14px);border-radius:16px;
+  box-shadow:0 10px 40px rgba(0,0,0,.5);transition:border-color .2s}
+.box:focus-within{border-color:rgba(139,92,246,.6);box-shadow:0 0 0 4px rgba(139,92,246,.12),0 10px 40px rgba(0,0,0,.5)}
+textarea{width:100%;resize:none;border:0;outline:0;background:transparent;color:var(--text);font:inherit;font-size:15.5px;
+  padding:16px 110px 16px 16px;max-height:180px;line-height:1.5}
+textarea::placeholder{color:var(--muted)}
+.send{position:absolute;right:8px;bottom:8px;height:38px;padding:0 16px;border:0;border-radius:11px;color:#05060a;font:600 14px Inter;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));cursor:pointer;box-shadow:0 6px 20px rgba(139,92,246,.35)}
+.send:disabled{opacity:.45;cursor:not-allowed;box-shadow:none}
+.send.stop{background:#2a2e3d;color:var(--text);border:1px solid var(--line)}
+.hint{display:flex;justify-content:space-between;color:var(--muted);font-size:11.5px;margin:8px 4px 0;font-family:var(--mono)}
+.hint a{color:inherit}
+.modal{position:fixed;inset:0;z-index:5;display:grid;place-items:center;background:rgba(0,0,0,.55);backdrop-filter:blur(6px)}
+.modal[hidden]{display:none}
+.card{width:min(460px,92vw);border:1px solid var(--line);background:linear-gradient(180deg,rgba(24,26,36,.95),rgba(12,13,19,.95));
+  border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.card.about{width:min(640px,92vw);max-height:88vh;overflow-y:auto}
+.card.about p{color:var(--text);font-size:14px;line-height:1.6;margin-bottom:12px}
+.card.about p b{color:#c4b5fd;font-weight:600}
+.card h3{margin:0 0 6px;font-size:18px}
+.card p{margin:0 0 16px;color:var(--muted);font-size:13.5px}
+.card input{width:100%;border:1px solid var(--line);background:#0b0d14;color:var(--text);border-radius:10px;padding:11px 12px;font:13px var(--mono);outline:0}
+.card input:focus{border-color:var(--accent)}
+.row{display:flex;gap:10px;justify-content:flex-end;margin-top:14px}
+.primary{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#05060a;border:0;font-weight:600}
+@media (max-width:600px){.sub{display:none}.empty h2{font-size:24px}.msg.bot .bubble{font-size:15.5px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="brand">
+      <div class="logo">J</div>
+      <div><h1>Jev, talking</h1><p class="sub">A decision model that can't generate text, made to chat one word per round trip.</p></div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="aboutBtn">What is this?</button>
+      <button class="btn key" id="keyBtn"><span class="dot"></span><span id="keyLabel">Add API key</span></button>
+    </div>
+  </header>
+
+  <main id="chat">
+    <div class="empty" id="empty">
+      <h2>What do you want Jev to say?</h2>
+      <p>Jev is a decision model. It can't write. Every word here is it answering a multiple-choice question about what the next word should be. <a href="#" id="aboutLink" style="color:#c4b5fd">How, and why</a>. Bring your own key from <a href="https://typesafe.ai" target="_blank" rel="noopener" style="color:#c4b5fd">typesafe.ai</a>.</p>
+      <div class="chips">
+        <button class="chip">How do I boil an egg?</button>
+        <button class="chip">Explain what a black hole is.</button>
+        <button class="chip">Write a short poem about the sea.</button>
+        <button class="chip">Who are you?</button>
+      </div>
+    </div>
+  </main>
+
+  <div class="composer">
+    <div class="box">
+      <textarea id="input" rows="1" placeholder="Ask Jev something…"></textarea>
+      <button class="send" id="send">Send</button>
+    </div>
+    <div class="hint">
+      <span id="status">~1.3 s per word · key stays in your browser</span>
+      <span><a href="https://github.com/Code-Forge-AU/jev-llm" target="_blank" rel="noopener">source on GitHub</a></span>
+    </div>
+  </div>
+</div>
+
+<div class="modal" id="about" hidden>
+  <div class="card about">
+    <h3>What is this?</h3>
+    <p><b>What Jev is for.</b> Jev is TypeSafe's "System One" model. You send it some state and typed questions: pick one of these options, score this against a rubric, is this statement true. It answers with calibrated probabilities, in under a second, hundreds of questions per call. It is built to be the part of your software that decides things: which team gets the ticket, whether the review is spam, which of 200 products a description matches. It has no output channel for text. It cannot say anything.</p>
+    <p><b>What this site does with it.</b> It asks Jev, over and over, "here is the reply so far; which of these words comes next?" Jev caps a question at 255 options, so the vocabulary is split across several questions, the best guesses from each are pooled, and a second question shows Jev the actual sentences ("...bring the water to a boil" vs "...bring the water to a go") and asks which reads best. Then it appends the winner and asks again. A speculative round guesses the following word in the same call so most words cost one round trip. Punctuation, ending, capital letters and a/an are all either more questions or rules, because Jev has opinions about none of them.</p>
+    <p><b>How bad an idea this is.</b> A normal language model produces a word in a single forward pass. This produces a word with roughly sixty multiple-choice questions, about 1.3 seconds, and a fraction of a cent. It can't spell, so any word that isn't in its 4,000-word list or in your message is simply unavailable to it. It can't quite tell when it's finished. It has never seen the sentence it is writing as anything but a list of options. Also it wrote a usable egg recipe on the first try, which is more than the setup deserves.</p>
+    <p>Code, benchmarks and everything that didn't work are on <a href="https://github.com/Code-Forge-AU/jev-llm" target="_blank" rel="noopener" style="color:#c4b5fd">GitHub</a>.</p>
+    <div class="row"><button class="btn" id="aboutClose">Close</button></div>
+  </div>
+</div>
+
+<div class="modal" id="modal" hidden>
+  <div class="card">
+    <h3>Your TypeSafe API key</h3>
+    <p>Sent straight to api.typesafe.ai for your own requests and kept in this browser's local storage. Nothing is logged server-side. A 30-word reply costs about a cent.</p>
+    <input id="keyInput" type="password" placeholder="apikey_…" autocomplete="off" spellcheck="false">
+    <div class="row">
+      <button class="btn" id="keyCancel">Cancel</button>
+      <button class="btn primary" id="keySave">Save key</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = s => document.querySelector(s);
+const chat = $("#chat"), input = $("#input"), sendBtn = $("#send"), status = $("#status");
+let key = "", messages = [], abort = null, serverKey = false;
+try { key = localStorage.getItem("typesafe_key") || ""; } catch {}
+const showKey = () => { $("#keyBtn").classList.toggle("ok", !!key || serverKey); $("#keyLabel").textContent = key ? "Key set · " + key.slice(0, 10) + "…" : serverKey ? "Using host's key" : "Add API key"; };
+showKey();
+fetch("/api/config").then(r => r.json()).then(c => { serverKey = !!c.server_key; showKey(); }).catch(() => {});
+
+$("#keyBtn").onclick = () => { $("#keyInput").value = key; $("#modal").hidden = false; $("#keyInput").focus(); };
+$("#keyCancel").onclick = () => $("#modal").hidden = true;
+const openAbout = e => { e?.preventDefault(); $("#about").hidden = false; };
+$("#aboutBtn").onclick = openAbout; $("#aboutLink").onclick = openAbout;
+$("#aboutClose").onclick = () => $("#about").hidden = true;
+document.querySelectorAll(".modal").forEach(m => m.onclick = e => { if (e.target === m) m.hidden = true; });
+$("#keySave").onclick = () => { key = $("#keyInput").value.trim(); try { localStorage.setItem("typesafe_key", key); } catch {} showKey(); $("#modal").hidden = true; };
+$("#keyInput").onkeydown = e => { if (e.key === "Enter") $("#keySave").onclick(); };
+document.querySelectorAll(".chip").forEach(c => c.onclick = () => { input.value = c.textContent; send(); });
+
+input.oninput = () => { input.style.height = "auto"; input.style.height = Math.min(input.scrollHeight, 180) + "px"; };
+input.onkeydown = e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); } };
+sendBtn.onclick = () => abort ? abort.abort() : send();
+
+function add(role, text) {
+  $("#empty")?.remove();
+  const m = document.createElement("div"); m.className = "msg " + role;
+  m.innerHTML = `<div class="who">${role === "user" ? "you" : "J"}</div><div><div class="bubble"></div><div class="meta"></div></div>`;
+  m.querySelector(".bubble").textContent = text;
+  chat.appendChild(m); chat.scrollTop = chat.scrollHeight;
+  return m;
+}
+const fmt = n => n >= 1e6 ? (n / 1e6).toFixed(2) + "M" : n >= 1e3 ? Math.round(n / 1e3) + "k" : n;
+
+async function send() {
+  const text = input.value.trim();
+  if (!text || abort) return;
+  if (!key && !serverKey) { $("#keyBtn").onclick(); return; }
+  input.value = ""; input.style.height = "auto";
+  add("user", text); messages.push({ role: "user", content: text });
+  const bot = add("bot", ""), bubble = bot.querySelector(".bubble"), meta = bot.querySelector(".meta");
+  bubble.classList.add("live"); sendBtn.textContent = "Stop"; sendBtn.classList.add("stop");
+  status.textContent = "picking a vocabulary…";
+  abort = new AbortController();
+  let reply = "", t0 = performance.now();
+  try {
+    const r = await fetch("/api/chat", { method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key, messages, max_words: 60 }), signal: abort.signal });
+    if (!r.ok) throw new Error(r.status === 401 ? "no API key" : "server error " + r.status);
+    const reader = r.body.getReader(), dec = new TextDecoder(); let buf = "";
+    while (true) {
+      const { value, done } = await reader.read(); if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let i; while ((i = buf.indexOf("\n\n")) >= 0) {
+        const line = buf.slice(0, i).replace(/^data: /, ""); buf = buf.slice(i + 2);
+        if (!line) continue;
+        const ev = JSON.parse(line);
+        if (ev.error) throw new Error(ev.error);
+        if (ev.text !== undefined) { reply = ev.text; bubble.textContent = reply; chat.scrollTop = chat.scrollHeight; }
+        if (ev.rounds) status.textContent = `round ${ev.rounds} · ${ev.seconds}s · ${(ev.seconds / Math.max(1, reply.split(/\s+/).length)).toFixed(1)} s/word`;
+        if (ev.done) {
+          const s = ev.stats, secs = ((performance.now() - t0) / 1000).toFixed(1);
+          meta.innerHTML = `<span><b>${s.words}</b> words</span><span><b>${s.rounds}</b> round trips</span><span><b>${secs}</b> s</span>` +
+            `<span><b>${fmt(s.input_tokens)}</b> tokens</span><span><b>$${(s.input_tokens * 0.042 / 1e6).toFixed(3)}</b></span>` +
+            (s.finished ? "" : `<span>hit the word cap</span>`);
+        }
+      }
+    }
+  } catch (e) {
+    if (e.name !== "AbortError") meta.innerHTML = `<span class="err">${e.message}</span>`;
+    else meta.innerHTML = `<span>stopped</span>`;
+    if (/401/.test(e.message) && key) { key = ""; try { localStorage.removeItem("typesafe_key"); } catch {} showKey(); }
+  }
+  bubble.classList.remove("live"); abort = null; sendBtn.textContent = "Send"; sendBtn.classList.remove("stop");
+  status.textContent = "~1.3 s per word · key stays in your browser";
+  if (reply) messages.push({ role: "assistant", content: reply }); else messages.pop();
+  input.focus();
+}
+</script>
+</body>
+</html>
