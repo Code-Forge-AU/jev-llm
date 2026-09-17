@@ -73,6 +73,9 @@ textarea::placeholder{color:var(--muted)}
 .modal[hidden]{display:none}
 .card{width:min(460px,92vw);border:1px solid var(--line);background:linear-gradient(180deg,rgba(24,26,36,.95),rgba(12,13,19,.95));
   border-radius:18px;padding:24px;box-shadow:0 30px 80px rgba(0,0,0,.6)}
+.card.about{width:min(640px,92vw);max-height:88vh;overflow-y:auto}
+.card.about p{color:var(--text);font-size:14px;line-height:1.6;margin-bottom:12px}
+.card.about p b{color:#c4b5fd;font-weight:600}
 .card h3{margin:0 0 6px;font-size:18px}
 .card p{margin:0 0 16px;color:var(--muted);font-size:13.5px}
 .card input{width:100%;border:1px solid var(--line);background:#0b0d14;color:var(--text);border-radius:10px;padding:11px 12px;font:13px var(--mono);outline:0}
@@ -89,13 +92,16 @@ textarea::placeholder{color:var(--muted)}
       <div class="logo">J</div>
       <div><h1>Jev, talking</h1><p class="sub">A decision model that can't generate text, made to chat one word per round trip.</p></div>
     </div>
-    <button class="btn key" id="keyBtn"><span class="dot"></span><span id="keyLabel">Add API key</span></button>
+    <div style="display:flex;gap:8px">
+      <button class="btn" id="aboutBtn">What is this?</button>
+      <button class="btn key" id="keyBtn"><span class="dot"></span><span id="keyLabel">Add API key</span></button>
+    </div>
   </header>
 
   <main id="chat">
     <div class="empty" id="empty">
       <h2>What do you want Jev to say?</h2>
-      <p>Every word you see is a TypeSafe Jev Choice question. It spells nothing; it only picks. Bring your own key from <a href="https://typesafe.ai" target="_blank" rel="noopener" style="color:#c4b5fd">typesafe.ai</a>.</p>
+      <p>Jev is a decision model. It can't write. Every word here is it answering a multiple-choice question about what the next word should be. <a href="#" id="aboutLink" style="color:#c4b5fd">How, and why</a>. Bring your own key from <a href="https://typesafe.ai" target="_blank" rel="noopener" style="color:#c4b5fd">typesafe.ai</a>.</p>
       <div class="chips">
         <button class="chip">How do I boil an egg?</button>
         <button class="chip">Explain what a black hole is.</button>
@@ -114,6 +120,17 @@ textarea::placeholder{color:var(--muted)}
       <span id="status">~1.3 s per word · key stays in your browser</span>
       <span><a href="https://github.com/kesku/jev-freeform" target="_blank" rel="noopener">inspired by jev-freeform</a></span>
     </div>
+  </div>
+</div>
+
+<div class="modal" id="about" hidden>
+  <div class="card about">
+    <h3>What is this?</h3>
+    <p><b>What Jev is for.</b> Jev is TypeSafe's "System One" model. You send it some state and typed questions: pick one of these options, score this against a rubric, is this statement true. It answers with calibrated probabilities, in under a second, hundreds of questions per call. It is built to be the part of your software that decides things: which team gets the ticket, whether the review is spam, which of 200 products a description matches. It has no output channel for text. It cannot say anything.</p>
+    <p><b>What this site does with it.</b> It asks Jev, over and over, "here is the reply so far; which of these words comes next?" Jev caps a question at 255 options, so the vocabulary is split across several questions, the best guesses from each are pooled, and a second question shows Jev the actual sentences ("...bring the water to a boil" vs "...bring the water to a go") and asks which reads best. Then it appends the winner and asks again. A speculative round guesses the following word in the same call so most words cost one round trip. Punctuation, ending, capital letters and a/an are all either more questions or rules, because Jev has opinions about none of them.</p>
+    <p><b>How bad an idea this is.</b> A normal language model produces a word in a single forward pass. This produces a word with roughly sixty multiple-choice questions, about 1.3 seconds, and a fraction of a cent. It can't spell, so any word that isn't in its 4,000-word list or in your message is simply unavailable to it. It can't quite tell when it's finished. It has never seen the sentence it is writing as anything but a list of options. Also it wrote a usable egg recipe on the first try, which is more than the setup deserves.</p>
+    <p>Code, benchmarks and everything that didn't work are on <a href="https://github.com/Code-Forge-AU/jev-llm" target="_blank" rel="noopener" style="color:#c4b5fd">GitHub</a>. The idea started with <a href="https://github.com/kesku/jev-freeform" target="_blank" rel="noopener" style="color:#c4b5fd">jev-freeform</a>, which did it one character at a time.</p>
+    <div class="row"><button class="btn" id="aboutClose">Close</button></div>
   </div>
 </div>
 
@@ -140,6 +157,10 @@ fetch("/api/config").then(r => r.json()).then(c => { serverKey = !!c.server_key;
 
 $("#keyBtn").onclick = () => { $("#keyInput").value = key; $("#modal").hidden = false; $("#keyInput").focus(); };
 $("#keyCancel").onclick = () => $("#modal").hidden = true;
+const openAbout = e => { e?.preventDefault(); $("#about").hidden = false; };
+$("#aboutBtn").onclick = openAbout; $("#aboutLink").onclick = openAbout;
+$("#aboutClose").onclick = () => $("#about").hidden = true;
+document.querySelectorAll(".modal").forEach(m => m.onclick = e => { if (e.target === m) m.hidden = true; });
 $("#keySave").onclick = () => { key = $("#keyInput").value.trim(); try { localStorage.setItem("typesafe_key", key); } catch {} showKey(); $("#modal").hidden = true; };
 $("#keyInput").onkeydown = e => { if (e.key === "Enter") $("#keySave").onclick(); };
 document.querySelectorAll(".chip").forEach(c => c.onclick = () => { input.value = c.textContent; send(); });
