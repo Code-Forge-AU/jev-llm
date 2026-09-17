@@ -115,32 +115,57 @@ def render(tokens):
 
 
 class Generator:
-    def __init__(self, groups=16, spec=2, beams=1, pool=32, temperature=0.0, jev=None):
+    def __init__(self, groups=16, spec=2, beams=1, pool=32, temperature=0.0, core=400, topic=600, spec_min=0.4, jev=None):
         self.base_groups = load_vocab(groups) if isinstance(groups, int) else groups
         self.groups = self.base_groups
         self.spec, self.beams, self.pool_size, self.temperature = spec, beams, pool, temperature
+        self.spec_min = spec_min
+        self.core, self.topic = core, topic
         self.jev = jev or Jev()
 
+    # ---- vocabulary ------------------------------------------------------
+    def select_vocab(self, state, ctx):
+        """One wide call per reply: which of all ~4000 words belong in this answer?
+
+        The active vocabulary is the most frequent `core` words (function words), words from the
+        conversation, and the `topic` words Jev rates most likely.  Per-word fan-outs then cover
+        ~700 words in 3 groups instead of 4000 in 16, which is where 80% of the tokens went.
+        """
+        inst = ("user_message is what the user asked. Which of these words is most likely to appear in a "
+                "helpful, correct, concise reply?")
+        qs = {f"tg{g}": {"type": "choice", "instructions": inst, "criteria": {w: None for w in ws}}
+              for g, ws in enumerate(self.base_groups)}
+        ans = self.jev(state, qs)
+        rated = sorted(((p, w) for q in ans.values() for w, p in q["probabilities"].items()), reverse=True)
+        core = [w for g in zip(*self.base_groups) for w in g][: self.core]  # round-robin groups -> frequency order
+        return self.regroup(core + ctx + [w for _, w in rated[: self.topic]])
+
+    def regroup(self, words):
+        words = list(dict.fromkeys(words))
+        n = max(1, -(-len(words) // GROUP))
+        return [words[i::n] for i in range(n)]
+
     # ---- stage 1 ---------------------------------------------------------
-    def fanout_questions(self, so_far, tag):
+    def fanout_questions(self, so_far, tag, groups=None):
         head = f"reply_so_far = {json.dumps(so_far)}. " if so_far else "The reply is empty so far. "
         inst = head + ("Select what comes NEXT in the assistant's helpful, concise, correct reply to user_message: "
                        "the next word (a space is inserted before it) or a punctuation mark attached to the last "
                        "word. Pick (not listed) if the next word is a word not listed.")
         return {f"{tag}g{g}": {"type": "choice", "instructions": inst,  # null description = 40% fewer tokens than ""
                                "criteria": {**{w: None for w in ws}, **PUNCT, OTHER: "the next word is a word not listed"}}
-                for g, ws in enumerate(self.groups)}
+                for g, ws in enumerate(groups or self.groups)}
 
-    def pool(self, ans, tag, toks):
+    def pool(self, ans, tag, toks, groups=None):
         """Candidate pool from stage-1 answers: top words per group + punctuation, repetition-blocked."""
+        groups = groups or self.groups
         scored = {}
-        for g in range(len(self.groups)):
+        for g in range(len(groups)):
             probs = ans[f"{tag}g{g}"]["probabilities"]
             words = sorted(((p, k) for k, p in probs.items() if k not in PUNCT and k != OTHER), reverse=True)[:4]
             for p, k in words:
                 scored[k] = p
             for k in PUNCT:
-                scored[k] = scored.get(k, 0) + probs.get(k, 0) / len(self.groups)
+                scored[k] = scored.get(k, 0) + probs.get(k, 0) / len(groups)
         grams = {tuple(toks[i:i + 3]) for i in range(len(toks) - 2)}
         out = []
         for k, p in sorted(scored.items(), key=lambda kv: -kv[1]):
@@ -149,12 +174,12 @@ class Generator:
             # ponytail: repetition block, the standard LM decoding trick
             if toks and k == toks[-1] or tuple(toks[-2:] + [k]) in grams:
                 continue
-            out.append(k)
+            out.append((k, p))
         return out[: self.pool_size]
 
     # ---- stage 2 ---------------------------------------------------------
     def rerank_questions(self, toks, pool, tag="r"):
-        crit = {f"c{i}": json.dumps(render(toks + [k])) for i, k in enumerate(pool)}
+        crit = {f"c{i}": json.dumps(render(toks + [k])) for i, (k, _) in enumerate(pool)}
         if toks and toks[-1] in SENTENCE_END:  # ponytail: END only after sentence-final punctuation
             crit["END"] = "Stop here; the reply is already complete."
         return {tag: {"type": "choice", "instructions":
@@ -167,11 +192,9 @@ class Generator:
         jev, state = self.jev, {"conversation": list(conversation), "user_message": user_message}
         # ponytail: words from the conversation join the vocabulary as an extra group, casing kept,
         # so names and topic words ("boil", "Paris") are available even if rare in general English.
-        known = {w for ws in self.base_groups for w in ws}
         ctx = re.findall(r"[A-Za-z][A-Za-z']*", user_message + " " + " ".join(m["content"] for m in conversation))
-        extra = list(dict.fromkeys(w for w in ctx if w.lower() not in known and w.lower() not in PUNCT))[:GROUP]
-        self.groups = self.base_groups + ([extra] if extra else [])
-        beams, done, hits = [([], 0.0)], [], 0  # (tokens, logprob); done = ended with END
+        self.groups, self.widened = self.select_vocab(state, ctx), set()
+        beams, done, hits, widened = [([], 0.0)], [], 0, 0  # (tokens, logprob); done = ended with END
         spec = {}  # rendered prefix -> (tag, stage-1 answers), filled speculatively
         while beams and len(beams[0][0]) < max_words:
             # stage 1 for beams whose fan-out was not speculated
@@ -181,20 +204,35 @@ class Generator:
                 spec.update({render(toks): (f"m{b}", ans) for b, toks in need})
             hits += len(beams) - len(need)
             pools = [self.pool(*spec[render(toks)][::-1], toks) for toks, _ in beams]
+            # ponytail: confidence-gated widening.  If the active vocabulary has no candidate the
+            # stage-1 groups like (all say "not listed"), do one wide fan-out over all 4000 words
+            # for the top beam and fold its best words into the active vocabulary.
+            toks0 = beams[0][0]
+            s1 = spec[render(toks0)]
+            if toks0 and all(s1[1][f"{s1[0]}g{g}"]["choice"] == OTHER for g in range(len(self.groups))) and render(toks0) not in self.widened:
+                self.widened.add(render(toks0))
+                widened += 1
+                wide = jev(state, self.fanout_questions(render(toks0), "w", self.base_groups))
+                self.groups = self.regroup([w for ws in self.groups for w in ws] + [k for k, _ in self.pool(wide, "w", toks0, self.base_groups)[:16]])
+                spec = {}
+                continue
             # stage 2 for every beam + speculative stage 1 for its top S children, one round trip
             qs = {}
+            # ponytail: speculate only on stage-1 candidates Jev actually rates (p >= spec_min);
+            # blind top-S speculation was ~50% wasted tokens.
+            specs = [[k for k, p in pools[b] if p >= self.spec_min][: self.spec] for b in range(len(beams))]
             for b, (toks, _) in enumerate(beams):
                 qs.update(self.rerank_questions(toks, pools[b], f"r{b}"))
-                for i, k in enumerate(pools[b][: self.spec]):
+                for i, k in enumerate(specs[b]):
                     qs.update(self.fanout_questions(render(toks + [k]), f"s{b}_{i}"))
             ans = jev(state, qs)
             spec, cands = {}, []
             for b, (toks, lp) in enumerate(beams):
                 probs = ans[f"r{b}"]["probabilities"]
-                for i, k in enumerate(pools[b]):
+                for i, (k, _) in enumerate(pools[b]):
                     cands.append((lp + math.log(max(probs[f"c{i}"], 1e-9)), toks + [k]))
-                    if i < self.spec:
-                        spec[render(toks + [k])] = (f"s{b}_{i}", ans)
+                for i, k in enumerate(specs[b]):
+                    spec[render(toks + [k])] = (f"s{b}_{i}", ans)
                 if "END" in probs:
                     cands.append((lp + math.log(max(probs["END"], 1e-9)), toks + [None]))
             if self.temperature > 0:  # Gumbel-top-k = sampling without replacement at this temperature
@@ -209,8 +247,8 @@ class Generator:
                 break
         toks, logp = max(done + beams, key=lambda c: c[1])
         return render(toks), {"rounds": jev.rounds, "requests": jev.calls, "seconds": round(jev.seconds, 1),
-                              "words": len(toks), "spec_hits": hits, "input_tokens": jev.input_tokens,
-                              "logprob": round(logp, 2), "finished": (toks, logp) in done}
+                              "words": len(toks), "spec_hits": hits, "widened": widened, "vocab": sum(map(len, self.groups)),
+                              "input_tokens": jev.input_tokens, "logprob": round(logp, 2), "finished": (toks, logp) in done}
 
 
 def main():
